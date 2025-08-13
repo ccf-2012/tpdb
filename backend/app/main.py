@@ -8,7 +8,7 @@ from typing import List
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'torcp2')))
 
 from torcp2.tmdbsearcher import TMDbSearcher
-from torcp2.torinfo import TorrentParser
+from torcp2.torinfo import TorrentParser, TorrentInfo
 from app import crud, models, schemas
 from app.models import SessionLocal, create_db_and_tables
 from app.config import settings
@@ -88,21 +88,38 @@ def create_media_from_tmdb(
     db: Session = Depends(get_db)
 ):
     try:
-        # Fetch details from TMDb
-        tmdb_details = searcher.get_details_by_id(tmdb_id, tmdb_cat)
+        # Fetch details from TMDb using TorrentInfo
+        n1 = TorrentInfo()
+        n1.tmdb_cat = tmdb_cat
+        n1.tmdb_id = str(tmdb_id)
+        r = searcher.search_tmdb_by_tmdbid(n1)
 
-        if not tmdb_details:
+        if not r:
             raise HTTPException(status_code=404, detail=f"Could not find TMDb details for ID {tmdb_id} and category {tmdb_cat}")
+
+        # Extract details from the populated TorrentInfo object
+        tmdb_title = n1.tmdb_title
+        tmdb_poster = n1.poster_path
+        tmdb_year = int(n1.release_air_date[:4]) if n1.release_air_date else None
+
+        genres_list = []
+        if n1.tmdbDetails and "genres" in n1.tmdbDetails:
+            genres_list = n1.tmdbDetails["genres"]
+        elif n1.genre_ids:
+            genres_list = [{"name": g} for g in n1.genre_ids]
+
+        tmdb_genres = ", ".join([genre["name"] for genre in genres_list])
+        tmdb_overview = n1.overview
 
         media_create = schemas.MediaCreate(
             torname_regex=torname_regex,
             tmdb_id=tmdb_id,
-            tmdb_title=tmdb_details.get("title") or tmdb_details.get("name"),
+            tmdb_title=tmdb_title,
             tmdb_cat=tmdb_cat,
-            tmdb_poster=tmdb_details.get("poster_path"),
-            tmdb_year=int(tmdb_details.get("release_date", "0")[:4]) if tmdb_details.get("release_date") else None,
-            tmdb_genres=", ".join([genre["name"] for genre in tmdb_details.get("genres", [])]),
-            tmdb_preview=tmdb_details.get("overview")
+            tmdb_poster=tmdb_poster,
+            tmdb_year=tmdb_year,
+            tmdb_genres=tmdb_genres,
+            tmdb_overview=tmdb_overview
         )
         new_media = crud.create_media(db, media_create)
         return new_media
@@ -133,6 +150,40 @@ def delete_media(media_id: int, db: Session = Depends(get_db)):
     if db_media is None:
         raise HTTPException(status_code=404, detail="Media not found")
     return db_media
+
+@app.get("/api/tmdb/details", response_model=dict)
+def get_tmdb_details(tmdb_id: int, tmdb_cat: str):
+    n1 = TorrentInfo()
+    n1.tmdb_cat = tmdb_cat
+    n1.tmdb_id = str(tmdb_id)
+    r = searcher.search_tmdb_by_tmdbid(n1)
+    if not r:
+        raise HTTPException(status_code=404, detail=f"TMDb details not found for ID {tmdb_id} and category {tmdb_cat}")
+
+    tmdb_details_dict = {
+        "title": n1.tmdb_title,
+        "name": n1.tmdb_title,
+        "poster_path": n1.poster_path,
+        "release_date": n1.release_air_date,
+        "overview": n1.overview,
+        "genres": [],
+        "id": n1.tmdb_id,
+        "media_type": n1.tmdb_cat,
+        "vote_average": n1.vote_average,
+        "popularity": n1.popularity,
+        "original_language": n1.original_language,
+        "original_title": n1.original_title,
+        "origin_country": n1.origin_country,
+        "production_countries": n1.production_countries,
+        "year": n1.year
+    }
+
+    if n1.tmdbDetails and hasattr(n1.tmdbDetails, 'genres'):
+        tmdb_details_dict["genres"] = [{"id": g.id, "name": g.name} for g in n1.tmdbDetails.genres]
+    elif n1.genre_ids:
+        tmdb_details_dict["genres"] = [{"name": g} for g in n1.genre_ids]
+
+    return tmdb_details_dict
 
 # --- Standard CRUD for Torrents ---
 @app.post("/api/torrents/", response_model=schemas.Torrent)

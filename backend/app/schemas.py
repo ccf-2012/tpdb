@@ -57,7 +57,7 @@ class MediaBase(BaseModel):
     tmdb_poster: Optional[str] = None
     tmdb_year: Optional[int] = None
     tmdb_genres: Optional[str] = None
-    tmdb_preview: Optional[str] = None
+    tmdb_overview: Optional[str] = None
     custom_title: Optional[str] = None
     custom_path: Optional[str] = None
 
@@ -74,7 +74,7 @@ class MediaUpdate(MediaBase):
     tmdb_poster: Optional[str] = None
     tmdb_year: Optional[int] = None
     tmdb_genres: Optional[str] = None
-    tmdb_preview: Optional[str] = None
+    tmdb_overview: Optional[str] = None
     custom_title: Optional[str] = None
     custom_path: Optional[str] = None
 

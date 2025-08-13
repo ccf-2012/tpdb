@@ -53,11 +53,13 @@ class TMDbSearcher:
         torinfo.genre_ids = getattr(result, 'genre_ids', [])
         if hasattr(result, 'genres'):
              torinfo.genre_ids = [g['id'] for g in result.genres]
+        if hasattr(result, 'overview'):
+            torinfo.overview = result.overview or ''
 
         logger.success(f'Found [{torinfo.tmdb_cat}-{torinfo.tmdb_id}]: {torinfo.tmdb_title}')
         return True
 
-    def searchTMDbByTMDbId(self, torinfo):
+    def search_tmdb_by_tmdbid(self, torinfo):
         details = None
         try:
             if torinfo.tmdb_cat == 'tv':
@@ -75,7 +77,7 @@ class TMDbSearcher:
             
             if details:
                 torinfo.tmdbDetails = details
-                self._save_tmdb_result(torinfo, details)
+                self._save_tmdb_result(torinfo, details, torinfo.tmdb_cat)
                 self.fillTMDbDetails(torinfo)
                 return True
         except Exception as e:

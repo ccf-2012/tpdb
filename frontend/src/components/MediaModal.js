@@ -48,7 +48,7 @@ function MediaModal({ media, onSave, onClose }) {
       alert('Please enter TMDb ID and Category (movie/tv) to fetch details.');
       return;
     }
-    axios.get(`https://api.themoviedb.org/3/${formData.tmdb_cat}/${formData.tmdb_id}?api_key=YOUR_TMDB_API_KEY`)
+    axios.get(`/api/tmdb/details?tmdb_id=${formData.tmdb_id}&tmdb_cat=${formData.tmdb_cat}`)
       .then(response => {
         const data = response.data;
         setFormData(prev => ({

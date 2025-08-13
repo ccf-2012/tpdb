@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import axios from 'axios';
 import 'bootstrap/dist/css/bootstrap.min.css';
 import { Button, Container, Row, Col, InputGroup, FormControl, Alert, Pagination } from 'react-bootstrap';
-import { useTable } from 'react-table';
+import { useTable, useExpanded } from 'react-table';
 import MediaModal from './components/MediaModal';
 import { useMediaQuery } from 'react-responsive';
 
@@ -44,7 +44,8 @@ function Table({ columns, data, onEdit, onDelete }) {
     {
       columns,
       data,
-    }
+    },
+    useExpanded
   );
 
   return (
@@ -69,6 +70,19 @@ function Table({ columns, data, onEdit, onDelete }) {
                     <td {...cell.getCellProps()}>{cell.render('Cell')}</td>
                   ))}
                 </tr>
+                {row.isExpanded ? (
+                  <tr>
+                    <td colSpan={visibleColumns.length}>
+                      {/* Render expanded content here */}
+                      <div className="p-2 bg-light">
+                        <h5>Torrents for {row.original.tmdb_title}</h5>
+                        <ul>
+                          {row.original.torrents.map(t => <li key={t.id}>{t.name}</li>)}
+                        </ul>
+                      </div>
+                    </td>
+                  </tr>
+                ) : null}
               </React.Fragment>
             );
           })}
@@ -157,11 +171,7 @@ function App() {
       request = axios.put(`/api/media/${mediaData.id}`, mediaData);
     } else { // Creating new media
       if (mode === 'tmdb') {
-        request = axios.post('/api/media/from-tmdb/', {
-          torname_regex: mediaData.torname_regex,
-          tmdb_cat: mediaData.tmdb_cat,
-          tmdb_id: mediaData.tmdb_id,
-        });
+        request = axios.post('/api/media/', mediaData);
       } else { // manual mode
         request = axios.post('/api/media/', mediaData);
       }
@@ -214,6 +224,11 @@ function App() {
                 ))}
               </ul>
             ),
+          },
+          {
+            Header: 'Total Torrents',
+            accessor: 'torrents',
+            Cell: ({ value }) => value.length,
           }
         );
       }
@@ -227,6 +242,18 @@ function App() {
               <Button variant="outline-warning" size="sm" onClick={() => handleOpenModal(row.original.originalItems[0])}>Edit</Button>{' '}
               <Button variant="outline-danger" size="sm" onClick={() => handleDeleteMedia(row.original.originalItems[0].id)}>Delete</Button>
             </div>
+          ),
+        },
+        {
+          // Make an expander cell
+          Header: () => null, // No header
+          id: 'expander', // It needs an ID
+          Cell: ({ row }) => (
+            // Use Cell to render an expander for each row.
+            // We can use the getToggleRowExpandedProps method here to get the expander props
+            <span {...row.getToggleRowExpandedProps()}>
+              {row.isExpanded ? '👇' : '👉'}
+            </span>
           ),
         }
       );

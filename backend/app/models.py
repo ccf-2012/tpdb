@@ -19,7 +19,7 @@ class Media(Base):
     tmdb_poster = Column(String)  # URL to the poster image
     tmdb_year = Column(Integer, nullable=True)
     tmdb_genres = Column(String, nullable=True)
-    tmdb_preview = Column(String, nullable=True)
+    tmdb_overview = Column(String, nullable=True)
     custom_title = Column(String, nullable=True)
     custom_path = Column(String, nullable=True)
 
