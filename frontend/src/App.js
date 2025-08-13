@@ -1,8 +1,32 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import axios from 'axios';
 import 'bootstrap/dist/css/bootstrap.min.css';
 import { Button, Table, Container, Row, Col, InputGroup, FormControl, Alert } from 'react-bootstrap';
+import MediaRow from './components/MediaRow';
 import MediaModal from './components/MediaModal';
+
+// Helper function to group media items by tmdb_id
+const groupMediaByTmdbId = (mediaList) => {
+  if (!mediaList) return [];
+  const grouped = mediaList.reduce((acc, media) => {
+    const key = media.tmdb_id;
+    if (!acc[key]) {
+      acc[key] = {
+        ...media, // Use the first media item as the base
+        // Store original items to manage them individually
+        originalItems: [media],
+        // Combine torrents from all items with the same tmdb_id
+        torrents: [...media.torrents],
+      };
+    } else {
+      acc[key].originalItems.push(media);
+      acc[key].torrents.push(...media.torrents);
+    }
+    return acc;
+  }, {});
+  return Object.values(grouped);
+};
+
 
 function App() {
   const [mediaList, setMediaList] = useState([]);
@@ -13,6 +37,9 @@ function App() {
   // Modal State
   const [showModal, setShowModal] = useState(false);
   const [selectedMedia, setSelectedMedia] = useState(null);
+
+  // Derived state using useMemo to group media whenever mediaList changes
+  const groupedMedia = useMemo(() => groupMediaByTmdbId(mediaList), [mediaList]);
 
   const fetchMedia = () => {
     setLoading(true);
@@ -51,6 +78,7 @@ function App() {
   };
 
   const handleOpenModal = (media = null) => {
+    // When editing, we pass the specific, original media item, not the group
     setSelectedMedia(media);
     setShowModal(true);
   };
@@ -68,7 +96,6 @@ function App() {
 
     request
       .then(response => {
-        // If a new media was created, we might need to handle its torrents separately
         const savedMedia = response.data;
         const newTorrents = mediaData.torrents.filter(t => String(t.id).startsWith('temp-'));
         if (newTorrents.length > 0) {
@@ -88,7 +115,7 @@ function App() {
   };
 
   const handleDeleteMedia = (mediaId) => {
-    if (window.confirm('Are you sure you want to delete this media item and all its torrents?')) {
+    if (window.confirm('Are you sure you want to delete this media item?')) {
       axios.delete(`/api/media/${mediaId}`)
         .then(() => fetchMedia()) // Refresh list after delete
         .catch(err => {
@@ -123,39 +150,26 @@ function App() {
       {loading ? (
         <div>Loading...</div>
       ) : (
-        <Table striped bordered hover responsive>
+        <Table responsive="sm">
           <thead className="thead-dark">
             <tr>
-              <th>Title</th>
-              <th>TMDb ID</th>
-              <th>Category</th>
-              <th>Regex</th>
-              <th>Torrents</th>
-              <th style={{ width: '150px' }}>Actions</th>
+              <th>Title / Category</th>
+              <th className="d-none d-lg-table-cell">Matched Rules</th>
+              <th>Total Torrents</th>
+              <th className="text-center">Actions</th>
             </tr>
           </thead>
           <tbody>
-            {mediaList.length > 0 ? mediaList.map(media => (
-              <tr key={media.id}>
-                <td>{media.tmdb_title}</td>
-                <td>{media.tmdb_id}</td>
-                <td>{media.tmdb_cat}</td>
-                <td><code>{media.torname_regex}</code></td>
-                <td>
-                  <ul className="list-unstyled mb-0">
-                    {media.torrents.map(torrent => (
-                      <li key={torrent.id} title={torrent.name} className="text-truncate" style={{maxWidth: '250px'}}>{torrent.name}</li>
-                    ))}
-                  </ul>
-                </td>
-                <td>
-                  <Button variant="warning" size="sm" onClick={() => handleOpenModal(media)}>Edit</Button>{' '}
-                  <Button variant="danger" size="sm" onClick={() => handleDeleteMedia(media.id)}>Delete</Button>
-                </td>
-              </tr>
+            {groupedMedia.length > 0 ? groupedMedia.map(mediaGroup => (
+              <MediaRow 
+                key={mediaGroup.tmdb_id} 
+                mediaGroup={mediaGroup} 
+                onEdit={handleOpenModal} // Pass the handler
+                onDelete={handleDeleteMedia} // Pass the handler
+              />
             )) : (
               <tr>
-                <td colSpan="6" className="text-center">No media found.</td>
+                <td colSpan="4" className="text-center">No media found.</td>
               </tr>
             )}
           </tbody>

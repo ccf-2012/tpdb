@@ -1,20 +1,28 @@
+import os
+import sys
 from fastapi import FastAPI, Depends, HTTPException
 from sqlalchemy.orm import Session
-from typing import List, Dict
-import subprocess
-import json
+from typing import List
 
-from . import crud, models, schemas
-from .models import SessionLocal, create_db_and_tables
+# Adjust sys.path to allow imports from the parent `backend` directory
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+
+from tmdbsearcher import TMDbSearcher
+from torinfo import TorrentParser
+from app import crud, models, schemas
+from app.models import SessionLocal, create_db_and_tables
+from app.config import settings
 
 app = FastAPI()
 
-# Create database tables on startup
+# Initialize TMDbSearcher at startup using the key from config
+# pydantic will raise an error on startup if the key is missing.
+searcher = TMDbSearcher(tmdb_api_key=settings.tmdb_api_key)
+
 @app.on_event("startup")
 def on_startup():
     create_db_and_tables()
 
-# Dependency to get DB session
 def get_db():
     db = SessionLocal()
     try:
@@ -22,48 +30,41 @@ def get_db():
     finally:
         db.close()
 
-@app.get("/api/search")
+@app.get("/api/search", response_model=schemas.Media)
 def search_media_by_torname(torname: str, db: Session = Depends(get_db)):
-    # 1. Try to find media in the local database
     media = crud.find_media_by_torname(db, torname)
     if media:
-        return schemas.Media.from_orm(media)
+        return media
 
-    # 2. If not found, call external script
+    # 1. Parse torrent name
+    torinfo = TorrentParser.parse(torname)
+    if not torinfo:
+        raise HTTPException(status_code=400, detail="Failed to parse torrent name.")
+
+    # 2. Search TMDb using the parsed info
+    found = searcher.searchTMDb(torinfo)
+    if not found:
+        raise HTTPException(status_code=404, detail=f"Could not find TMDb match for \"{torname}\"")
+
+    # 3. If search is successful, save to DB
     try:
-        # Note: Adjust the path to tmdbsearcher.py if necessary
-        # The script is expected to be in the parent directory of 'app'
-        result = subprocess.run(
-            ["python", "tmdbsearcher.py", torname],
-            capture_output=True,
-            text=True,
-            check=True,
-            cwd="./backend"
-        )
-        tmdb_data = json.loads(result.stdout)
-
-        # 3. If search is successful, save to DB
         media_create = schemas.MediaCreate(
-            torname_regex=tmdb_data.get("torname_regex", torname), # Use a sensible default
-            tmdb_id=tmdb_data["id"],
-            tmdb_title=tmdb_data["title"],
-            tmdb_cat=tmdb_data["category"],
-            tmdb_poster=tmdb_data.get("poster_path")
+            torname_regex=torname,  # Using the original name as regex for simplicity
+            tmdb_id=torinfo.tmdb_id,
+            tmdb_title=torinfo.tmdb_title,
+            tmdb_cat=torinfo.tmdb_cat,
+            tmdb_poster=torinfo.poster_path
         )
         new_media = crud.create_media(db, media_create)
 
-        # 4. Create the associated torrent record
         torrent_create = schemas.TorrentCreate(name=torname)
         crud.create_torrent(db, torrent_create, new_media.id)
 
-        # Refresh the object to get the new torrent relationship
         db.refresh(new_media)
-        return schemas.Media.from_orm(new_media)
-
-    except subprocess.CalledProcessError as e:
-        raise HTTPException(status_code=404, detail=f"Torrent not found locally and external search failed: {e.stderr}")
-    except (json.JSONDecodeError, KeyError) as e:
-        raise HTTPException(status_code=500, detail=f"Failed to parse external search result: {e}")
+        return new_media
+    except Exception as e:
+        # Catch potential database or validation errors
+        raise HTTPException(status_code=500, detail=f"Failed to save media to database: {e}")
 
 # --- Standard CRUD for Media ---
 @app.post("/api/media/", response_model=schemas.Media)
@@ -72,8 +73,7 @@ def create_media(media: schemas.MediaCreate, db: Session = Depends(get_db)):
 
 @app.get("/api/media/", response_model=List[schemas.Media])
 def read_all_media(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
-    all_media = crud.get_all_media(db, skip=skip, limit=limit)
-    return all_media
+    return crud.get_all_media(db, skip=skip, limit=limit)
 
 @app.get("/api/media/{media_id}", response_model=schemas.Media)
 def read_media(media_id: int, db: Session = Depends(get_db)):
@@ -99,7 +99,6 @@ def delete_media(media_id: int, db: Session = Depends(get_db)):
 # --- Standard CRUD for Torrents ---
 @app.post("/api/torrents/", response_model=schemas.Torrent)
 def create_torrent_for_media(media_id: int, torrent: schemas.TorrentCreate, db: Session = Depends(get_db)):
-    # Verify media exists
     db_media = crud.get_media(db, media_id=media_id)
     if db_media is None:
         raise HTTPException(status_code=404, detail="Media not found")

@@ -23,6 +23,9 @@ share/python-wheels/
 *.egg
 MANIFEST
 
+# configuration files
+*.ini
+
 # Virtual environments
 .env
 .venv
