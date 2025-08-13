@@ -7,8 +7,26 @@ from . import models, schemas
 def get_media(db: Session, media_id: int):
     return db.query(models.Media).filter(models.Media.id == media_id).first()
 
+from sqlalchemy.orm import Session
+from sqlalchemy import func
+from . import models, schemas
+
 def get_all_media(db: Session, skip: int = 0, limit: int = 100):
-    return db.query(models.Media).offset(skip).limit(limit).all()
+    # 1. Get the total count of distinct groups (tmdb_id)
+    total_groups = db.query(func.count(models.Media.tmdb_id.distinct())).scalar()
+
+    # 2. Get the paginated list of distinct tmdb_id's
+    paginated_tmdb_ids_query = db.query(models.Media.tmdb_id).distinct().offset(skip).limit(limit)
+    paginated_tmdb_ids = [id[0] for id in paginated_tmdb_ids_query.all()]
+
+    if not paginated_tmdb_ids:
+        return {"items": [], "total": total_groups}
+
+    # 3. Get all media items that belong to the paginated tmdb_id's
+    media_items = db.query(models.Media).filter(models.Media.tmdb_id.in_(paginated_tmdb_ids)).all()
+    
+    return {"items": media_items, "total": total_groups}
+
 
 def find_media_by_torname(db: Session, torname: str) -> models.Media | None:
     all_media = db.query(models.Media).all()

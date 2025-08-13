@@ -26,6 +26,9 @@ MANIFEST
 # configuration files
 *.ini
 
+# test py
+tt_*
+
 # Virtual environments
 .env
 .venv

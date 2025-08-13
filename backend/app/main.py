@@ -5,10 +5,10 @@ from sqlalchemy.orm import Session
 from typing import List
 
 # Adjust sys.path to allow imports from the parent `backend` directory
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'torcp2')))
 
-from tmdbsearcher import TMDbSearcher
-from torinfo import TorrentParser
+from torcp2.tmdbsearcher import TMDbSearcher
+from torcp2.torinfo import TorrentParser
 from app import crud, models, schemas
 from app.models import SessionLocal, create_db_and_tables
 from app.config import settings
@@ -49,7 +49,7 @@ def search_media_by_torname(torname: str, db: Session = Depends(get_db)):
     # 3. If search is successful, save to DB
     try:
         media_create = schemas.MediaCreate(
-            torname_regex=torname,  # Using the original name as regex for simplicity
+            torname_regex=torinfo.media_title,  # Using the original name as regex for simplicity
             tmdb_id=torinfo.tmdb_id,
             tmdb_title=torinfo.tmdb_title,
             tmdb_cat=torinfo.tmdb_cat,
@@ -71,8 +71,8 @@ def search_media_by_torname(torname: str, db: Session = Depends(get_db)):
 def create_media(media: schemas.MediaCreate, db: Session = Depends(get_db)):
     return crud.create_media(db=db, media=media)
 
-@app.get("/api/media/", response_model=List[schemas.Media])
-def read_all_media(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
+@app.get("/api/media/", response_model=schemas.MediaPage)
+def read_all_media(skip: int = 0, limit: int = 10, db: Session = Depends(get_db)):
     return crud.get_all_media(db, skip=skip, limit=limit)
 
 @app.get("/api/media/{media_id}", response_model=schemas.Media)

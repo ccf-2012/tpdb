@@ -34,3 +34,7 @@ class Media(MediaBase):
 
     class Config:
         from_attributes = True
+
+class MediaPage(BaseModel):
+    items: List[Media]
+    total: int
