@@ -12,11 +12,12 @@ class Media(Base):
     __tablename__ = "media"
 
     id = Column(Integer, primary_key=True, index=True)
-    torname_regex = Column(String, unique=True, index=True, nullable=False)
+    torname_regex = Column(String, index=True, nullable=False)
     tmdb_id = Column(Integer, index=True, nullable=True)
+    imdb_id = Column(String, index=True, nullable=True)
     tmdb_title = Column(String, nullable=True)
     tmdb_cat = Column(String, nullable=True)
-    tmdb_poster = Column(String)  # URL to the poster image
+    tmdb_poster = Column(String, nullable=True)
     tmdb_year = Column(Integer, nullable=True)
     tmdb_genres = Column(String, nullable=True)
     tmdb_overview = Column(String, nullable=True)
@@ -29,11 +30,11 @@ class Torrent(Base):
     __tablename__ = "torrents"
 
     id = Column(Integer, primary_key=True, index=True)
-    name = Column(String, nullable=False)
+    name = Column(String, nullable=False, unique=True)
+    infolink = Column(String, nullable=True)
     media_id = Column(Integer, ForeignKey("media.id"), nullable=False)
 
     media = relationship("Media", back_populates="torrents")
 
 def create_db_and_tables():
     Base.metadata.create_all(bind=engine)
-

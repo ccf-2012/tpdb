@@ -1,6 +1,9 @@
 from sqlalchemy.orm import Session
 import re
 from . import models, schemas
+from torcp2.torinfo import TorrentInfo
+from torcp2.tmdbsearcher import TMDbSearcher
+from loguru import logger
 
 # --- Read Operations ---
 
@@ -30,39 +33,46 @@ def get_all_media(db: Session, skip: int = 0, limit: int = 100):
 def find_torrent_by_name(db: Session, name: str) -> models.Torrent | None:
     return db.query(models.Torrent).filter(models.Torrent.name == name).first()
 
-def find_media_by_torname_regex(db: Session, torname: str) -> models.Media | None:
-    all_media = db.query(models.Media).all()
-    for media in all_media:
-        try:
-            if re.search(media.torname_regex, torname, re.IGNORECASE):
-                return media
-        except re.error:
-            # Ignore invalid regex patterns in the database
-            continue
-    return None
-
-def find_media_by_title(db: Session, title: str) -> models.Media | None:
-    all_media = db.query(models.Media).all()
+def find_media_by_torname_regex(db: Session, title: str) -> models.Media | None:
+    all_media = db.query(models.Media).filter(models.Media.torname_regex != None).all()
     for media in all_media:
         try:
             if re.search(media.torname_regex, title, re.IGNORECASE):
+                logger.info(f"Found media by regex: {media.torname_regex} for title: {title}")
                 return media
         except re.error:
-            # Ignore invalid regex patterns in the database
             continue
     return None
 
+def find_media_by_tmdb_id(db: Session, tmdb_cat: str, tmdb_id: int) -> models.Media | None:
+    return db.query(models.Media).filter(models.Media.tmdb_cat == tmdb_cat, models.Media.tmdb_id == tmdb_id).first()
+
+def find_media_by_imdb_id(db: Session, imdb_id: str) -> models.Media | None:
+    return db.query(models.Media).filter(models.Media.imdb_id == imdb_id).first()
+
+
 # --- Create Operations ---
 
-def create_media(db: Session, media: schemas.MediaCreate) -> models.Media:
-    db_media = models.Media(**media.model_dump())
+def create_media(db: Session, torinfo: TorrentInfo) -> models.Media:
+    media_create = schemas.MediaCreate(
+        torname_regex=torinfo.media_title,
+        tmdb_id=torinfo.tmdb_id,
+        tmdb_title=torinfo.tmdb_title,
+        tmdb_cat=torinfo.tmdb_cat,
+        tmdb_poster=torinfo.poster_path,
+        tmdb_year=torinfo.year,
+        imdb_id=torinfo.imdb_id,
+        tmdb_overview=torinfo.overview
+    )
+    db_media = models.Media(**media_create.model_dump())
     db.add(db_media)
     db.commit()
     db.refresh(db_media)
     return db_media
 
-def create_torrent(db: Session, torrent: schemas.TorrentCreate, media_id: int) -> models.Torrent:
-    db_torrent = models.Torrent(**torrent.model_dump(), media_id=media_id)
+def create_torrent(db: Session, torinfo: TorrentInfo, media_id: int) -> models.Torrent:
+    torrent_create = schemas.TorrentCreate(name=torinfo.torname, infolink=torinfo.infolink)
+    db_torrent = models.Torrent(**torrent_create.model_dump(), media_id=media_id)
     db.add(db_torrent)
     db.commit()
     db.refresh(db_torrent)
@@ -94,3 +104,71 @@ def delete_torrent(db: Session, torrent_id: int) -> models.Torrent | None:
         db.delete(db_torrent)
         db.commit()
     return db_torrent
+
+# --- Main Search Logic ---
+
+def search_and_create_media(db: Session, torinfo: TorrentInfo, searcher: TMDbSearcher) -> models.Media | None:
+    # 1. Exact torrent name match
+    if torrent := find_torrent_by_name(db, torinfo.torname):
+        logger.info(f"LOCAL: Found existing torrent by name: {torinfo.torname}")
+        return torrent.media
+
+    # 2. TMDb ID provided
+    if torinfo.tmdb_id and torinfo.tmdb_cat:
+        logger.info(f"INFO: TMDb ID provided: {torinfo.tmdb_cat}-{torinfo.tmdb_id}")
+        if media := find_media_by_tmdb_id(db, torinfo.tmdb_cat, torinfo.tmdb_id):
+            logger.info(f"LOCAL: Found media by TMDb ID: {media.tmdb_title}")
+            create_torrent(db, torinfo, media.id)
+            return media
+        else:
+            # If not in local DB, fetch from TMDb and create
+            if searcher.search_tmdb_by_tmdbid(torinfo):
+                logger.info(f"TMDb: Found media by TMDb ID: {torinfo.tmdb_title}")
+                new_media = create_media(db, torinfo)
+                create_torrent(db, torinfo, new_media.id)
+                return new_media
+
+    # 3. IMDb ID provided (for movies)
+    if torinfo.imdb_id and torinfo.tmdb_cat == 'movie':
+        logger.info(f"INFO: IMDb ID provided: {torinfo.imdb_id}")
+        if media := find_media_by_imdb_id(db, torinfo.imdb_id):
+            logger.info(f"LOCAL: Found media by IMDb ID: {media.tmdb_title}")
+            create_torrent(db, torinfo, media.id)
+            return media
+        else:
+            # If not in local DB, fetch from TMDb and create
+            if searcher.searchTMDbByIMDbId(torinfo):
+                logger.info(f"TMDb: Found media by IMDb ID: {torinfo.tmdb_title}")
+                new_media = create_media(db, torinfo)
+                create_torrent(db, torinfo, new_media.id)
+                return new_media
+
+    # 4. Regex match on torrent name
+    if media := find_media_by_torname_regex(db, torinfo.media_title):
+        logger.info(f"LOCAL: Found media by regex: {torinfo.media_title}")
+        create_torrent(db, torinfo, media.id)
+        return media
+
+    # 5. Blind search on TMDb
+    logger.info(f"INFO: No local match found. Performing blind search on TMDb for: {torinfo.media_title}")
+    if searcher.searchTMDb(torinfo):
+        # After blind search, torinfo is populated with TMDb data.
+        # Check again if this TMDb ID already exists locally.
+        if media := find_media_by_tmdb_id(db, torinfo.tmdb_cat, torinfo.tmdb_id):
+            logger.info(f"LOCAL: Found media by TMDb ID after blind search: {media.tmdb_title}")
+            create_torrent(db, torinfo, media.id)
+            return media
+
+        # If confidence is too low, reject
+        if torinfo.confidence < 30:
+            logger.warning(f"BLIND confidence too low: {torinfo.confidence} for {torinfo.torname}")
+            return None
+
+        # Create new media and torrent
+        logger.info(f"TMDb: Found media by blind search: {torinfo.tmdb_title}")
+        new_media = create_media(db, torinfo)
+        create_torrent(db, torinfo, new_media.id)
+        return new_media
+
+    logger.warning(f"FAIL: Could not find any match for: {torinfo.torname}")
+    return None

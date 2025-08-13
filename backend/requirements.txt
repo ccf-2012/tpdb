@@ -3,3 +3,6 @@ uvicorn[standard]
 sqlalchemy
 pydantic
 pydantic-settings
+tmdbv3api
+Cinemagoer
+loguru

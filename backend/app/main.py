@@ -30,50 +30,38 @@ def get_db():
     finally:
         db.close()
 
-@app.get("/api/search", response_model=schemas.Media)
-def search_media_by_torname(torname: str, db: Session = Depends(get_db)):
-    # 1. Check if torrent with the same name already exists
-    torrent = crud.find_torrent_by_name(db, torname)
-    if torrent:
-        return torrent.media
+def parse_tmdb_str(tmdb_str: str):
+    if not tmdb_str or '-' not in tmdb_str:
+        return None, None
+    parts = tmdb_str.split('-')
+    return parts[0], parts[1] if len(parts) > 1 else None
 
-    # 2. Parse torrent name
-    torinfo = TorrentParser.parse(torname)
-    if not torinfo:
-        raise HTTPException(status_code=400, detail="Failed to parse torrent name.")
+@app.post("/api/query", response_model=schemas.Media)
+def search_media_by_torname_post(query: schemas.Query, db: Session = Depends(get_db)):
+    """
+    This endpoint mirrors the logic of the original Flask query, accepting a JSON body.
+    """
+    torinfo = TorrentParser.parse(query.torname)
+    if not torinfo.media_title:
+        raise HTTPException(status_code=400, detail="Could not parse a valid media title from torname")
 
-    # 3. Check if media with a matching regex exists
-    media = crud.find_media_by_title(db, torinfo.media_title)
-    if media:
-        # If media is found, create a new torrent and associate it
-        torrent_create = schemas.TorrentCreate(name=torname)
-        crud.create_torrent(db, torrent_create, media.id)
-        return media
+    # Augment torinfo with optional data from the query payload
+    if query.extitle:
+        torinfo.subtitle = query.extitle
+    if query.imdbid:
+        torinfo.imdb_id = query.imdbid
+    if query.tmdbstr:
+        torinfo.tmdb_cat, torinfo.tmdb_id = parse_tmdb_str(query.tmdbstr)
+    if query.infolink:
+        torinfo.infolink = query.infolink
 
-    # 4. If no media found, search TMDb
-    found = searcher.searchTMDb(torinfo)
-    if not found:
-        raise HTTPException(status_code=404, detail=f"Could not find TMDb match for \"{torname}\"")
+    # Call the main search logic in crud
+    media_result = crud.search_and_create_media(db, torinfo, searcher)
 
-    # 5. If search is successful, save to DB
-    try:
-        media_create = schemas.MediaCreate(
-            torname_regex=torinfo.media_title,  # Using the parsed title as regex
-            tmdb_id=torinfo.tmdb_id,
-            tmdb_title=torinfo.tmdb_title,
-            tmdb_cat=torinfo.tmdb_cat,
-            tmdb_poster=torinfo.poster_path
-        )
-        new_media = crud.create_media(db, media_create)
-
-        torrent_create = schemas.TorrentCreate(name=torname)
-        crud.create_torrent(db, torrent_create, new_media.id)
-
-        db.refresh(new_media)
-        return new_media
-    except Exception as e:
-        # Catch potential database or validation errors
-        raise HTTPException(status_code=500, detail=f"Failed to save media to database: {e}")
+    if media_result:
+        return media_result
+    
+    raise HTTPException(status_code=404, detail=f"Could not find or create a media match for \"{query.torname}\"")
 
 # --- Standard CRUD for Media ---
 @app.post("/api/media/", response_model=schemas.Media)

@@ -1,36 +1,57 @@
-
 import React, { useState, useEffect } from 'react';
-import { Modal, Button, Form, InputGroup, FormControl } from 'react-bootstrap';
+import { Modal, Button, Form, Row, Col, Alert } from 'react-bootstrap';
 import axios from 'axios';
+
+// A dedicated component to display TMDb info in a clean, read-only format
+function TMDbInfoBlock({ details }) {
+  if (!details || !details.tmdb_title) {
+    return (
+        <div className="p-3 mb-3 bg-light rounded text-center text-muted">
+            TMDb details will appear here once fetched.
+        </div>
+    );
+  }
+
+  const posterUrl = details.tmdb_poster ? `https://image.tmdb.org/t/p/w154${details.tmdb_poster}` : null;
+
+  return (
+    <div className="p-3 mb-3 bg-light rounded">
+      <Row>
+        <Col md={3} className="text-center">
+          {posterUrl ? (
+            <img src={posterUrl} alt="poster" className="img-fluid rounded" />
+          ) : (
+            <div className="text-center text-muted pt-4">No Poster</div>
+          )}
+        </Col>
+        <Col md={9}>
+          <h4>{details.tmdb_title} <span className="text-muted">({details.tmdb_year})</span></h4>
+          <p className="mb-1"><strong>Genres:</strong> {details.tmdb_genres || 'N/A'}</p>
+          <p className="small mt-2" style={{maxHeight: '120px', overflowY: 'auto'}}>
+            {details.tmdb_overview || 'No overview available.'}
+          </p>
+        </Col>
+      </Row>
+    </div>
+  );
+}
 
 function MediaModal({ media, onSave, onClose }) {
   const [formData, setFormData] = useState({});
-  const [mode, setMode] = useState('tmdb'); // 'tmdb' or 'manual'
+  const [mode, setMode] = useState('tmdb');
+  const [fetchError, setFetchError] = useState(null);
 
   useEffect(() => {
     if (media) {
       setFormData(media);
-      // Determine mode based on existing media data
-      if (media.tmdb_id) {
-        setMode('tmdb');
-      } else {
-        setMode('manual');
-      }
+      setMode(media.tmdb_id ? 'tmdb' : 'manual');
     } else {
-      // Default state for a new media item
       setFormData({
         torname_regex: '',
         tmdb_id: '',
-        tmdb_title: '',
-        tmdb_cat: '',
-        tmdb_poster: '',
-        tmdb_year: '',
-        tmdb_genres: '',
-        tmdb_preview: '',
-        custom_title: '',
-        custom_path: ''
+        tmdb_cat: 'movie',
       });
-      setMode('tmdb'); // Default to TMDb mode for new items
+      setMode('tmdb');
     }
   }, [media]);
 
@@ -45,9 +66,10 @@ function MediaModal({ media, onSave, onClose }) {
 
   const handleFetchTMDbDetails = () => {
     if (!formData.tmdb_id || !formData.tmdb_cat) {
-      alert('Please enter TMDb ID and Category (movie/tv) to fetch details.');
+      setFetchError('Please provide a TMDb ID and select a category.');
       return;
     }
+    setFetchError(null);
     axios.get(`/api/tmdb/details?tmdb_id=${formData.tmdb_id}&tmdb_cat=${formData.tmdb_cat}`)
       .then(response => {
         const data = response.data;
@@ -57,12 +79,12 @@ function MediaModal({ media, onSave, onClose }) {
           tmdb_poster: data.poster_path,
           tmdb_year: (data.release_date || data.first_air_date)?.substring(0, 4),
           tmdb_genres: data.genres?.map(g => g.name).join(', '),
-          tmdb_preview: data.overview
+          tmdb_overview: data.overview
         }));
       })
       .catch(error => {
         console.error('Error fetching TMDb details:', error);
-        alert('Failed to fetch TMDb details. Please check the ID and category.');
+        setFetchError(error.response?.data?.detail || 'Failed to fetch details.');
       });
   };
 
@@ -73,88 +95,47 @@ function MediaModal({ media, onSave, onClose }) {
       </Modal.Header>
       <Modal.Body>
         <Form>
-          <Form.Group className="mb-3">
-            <Form.Label>Entry Mode</Form.Label>
-            <div>
-              <Form.Check
-                inline
-                type="radio"
-                label="TMDb Match"
-                name="mode"
-                id="mode-tmdb"
-                value="tmdb"
-                checked={mode === 'tmdb'}
-                onChange={() => setMode('tmdb')}
-              />
-              <Form.Check
-                inline
-                type="radio"
-                label="Manual Entry"
-                name="mode"
-                id="mode-manual"
-                value="manual"
-                checked={mode === 'manual'}
-                onChange={() => setMode('manual')}
-              />
-            </div>
-          </Form.Group>
-
+          {/* Always show the regex field at the top */}
           <Form.Group className="mb-3">
             <Form.Label>Torrent Name Regex</Form.Label>
-            <Form.Control type="text" name="torname_regex" value={formData.torname_regex || ''} onChange={handleChange} />
+            <Form.Control 
+              type="text" 
+              name="torname_regex" 
+              value={formData.torname_regex || ''} 
+              onChange={handleChange} 
+              placeholder='e.g., "My Movie Title 2023"'
+            />
           </Form.Group>
 
-          {mode === 'tmdb' && (
-            <>
-              <Form.Group className="mb-3">
+          {/* TMDb Details Section */}
+          <h5 className="mt-4">TMDb Matching</h5>
+          <hr />
+          <Row className="align-items-end">
+            <Col md={5}>
+              <Form.Group>
                 <Form.Label>TMDb ID</Form.Label>
-                <Form.Control type="number" name="tmdb_id" value={formData.tmdb_id || ''} onChange={handleChange} />
+                <Form.Control type="number" name="tmdb_id" value={formData.tmdb_id || ''} onChange={handleChange} placeholder="e.g., 603" />
               </Form.Group>
-              <Form.Group className="mb-3">
+            </Col>
+            <Col md={4}>
+              <Form.Group>
                 <Form.Label>Category</Form.Label>
                 <Form.Select name="tmdb_cat" value={formData.tmdb_cat || ''} onChange={handleChange}>
-                  <option value="">Select Category</option>
                   <option value="movie">Movie</option>
                   <option value="tv">TV</option>
                 </Form.Select>
               </Form.Group>
-              <Button variant="info" onClick={handleFetchTMDbDetails} className="mb-3">Fetch TMDb Details</Button>
+            </Col>
+            <Col md={3}>
+              <Button variant="info" onClick={handleFetchTMDbDetails} className="w-100">Fetch Details</Button>
+            </Col>
+          </Row>
+          {fetchError && <Alert variant="danger" className="mt-3">{fetchError}</Alert>}
+          
+          <div className="mt-3">
+            <TMDbInfoBlock details={formData} />
+          </div>
 
-              <Form.Group className="mb-3">
-                <Form.Label>TMDb Title</Form.Label>
-                <Form.Control type="text" name="tmdb_title" value={formData.tmdb_title || ''} readOnly />
-              </Form.Group>
-              <Form.Group className="mb-3">
-                <Form.Label>TMDb Poster URL</Form.Label>
-                <Form.Control type="text" name="tmdb_poster" value={formData.tmdb_poster || ''} readOnly />
-              </Form.Group>
-              <Form.Group className="mb-3">
-                <Form.Label>TMDb Year</Form.Label>
-                <Form.Control type="text" name="tmdb_year" value={formData.tmdb_year || ''} readOnly />
-              </Form.Group>
-              <Form.Group className="mb-3">
-                <Form.Label>TMDb Genres</Form.Label>
-                <Form.Control type="text" name="tmdb_genres" value={formData.tmdb_genres || ''} readOnly />
-              </Form.Group>
-              <Form.Group className="mb-3">
-                <Form.Label>TMDb Preview</Form.Label>
-                <Form.Control as="textarea" name="tmdb_preview" value={formData.tmdb_preview || ''} readOnly rows={3} />
-              </Form.Group>
-            </>
-          )}
-
-          {mode === 'manual' && (
-            <>
-              <Form.Group className="mb-3">
-                <Form.Label>Custom Title</Form.Label>
-                <Form.Control type="text" name="custom_title" value={formData.custom_title || ''} onChange={handleChange} />
-              </Form.Group>
-              <Form.Group className="mb-3">
-                <Form.Label>Custom Path</Form.Label>
-                <Form.Control type="text" name="custom_path" value={formData.custom_path || ''} onChange={handleChange} />
-              </Form.Group>
-            </>
-          )}
         </Form>
       </Modal.Body>
       <Modal.Footer>

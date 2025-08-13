@@ -60,29 +60,25 @@ class TMDbSearcher:
         return True
 
     def search_tmdb_by_tmdbid(self, torinfo):
-        details = None
+        """Fetches details by TMDb ID and populates torinfo."""
+        if not torinfo.tmdb_id or not torinfo.tmdb_cat:
+            logger.error("TMDb ID or category missing for TMDb search.")
+            return False
         try:
+            details = None
             if torinfo.tmdb_cat == 'tv':
                 details = TV().details(torinfo.tmdb_id)
             elif torinfo.tmdb_cat == 'movie':
                 details = Movie().details(torinfo.tmdb_id)
-            else:
-                # Try TV first, then movie
-                try:
-                    details = TV().details(torinfo.tmdb_id)
-                    torinfo.tmdb_cat = 'tv'
-                except Exception:
-                    details = Movie().details(torinfo.tmdb_id)
-                    torinfo.tmdb_cat = 'movie'
-            
+
             if details:
-                torinfo.tmdbDetails = details
+                # Overwrite torinfo with full details
                 self._save_tmdb_result(torinfo, details, torinfo.tmdb_cat)
-                self.fillTMDbDetails(torinfo)
+                self.fillTMDbDetails(torinfo, details) # Pass details to avoid re-fetching
                 return True
+
         except Exception as e:
             logger.error(f"Error searching TMDb by ID {torinfo.tmdb_id}: {e}")
-
         return False
 
     def searchTMDbByIMDbId(self, torinfo):
@@ -344,30 +340,36 @@ class TMDbSearcher:
         
         return torinfo.imdb_id
 
-    def fillTMDbDetails(self, torinfo):
-        if not torinfo.tmdb_id or torinfo.tmdbDetails: # Already filled or no ID
+    def fillTMDbDetails(self, torinfo, details=None):
+        if not torinfo.tmdb_id:
             return torinfo
 
-        try:
-            if torinfo.tmdb_cat == 'movie':
-                details = Movie().details(torinfo.tmdb_id)
-            elif torinfo.tmdb_cat == 'tv':
-                details = TV().details(torinfo.tmdb_id)
+        # If details are not passed in, fetch them
+        if not details:
+            if torinfo.tmdbDetails:  # Already filled
+                details = torinfo.tmdbDetails
             else:
-                return torinfo # Cannot fetch details without a category
-            
-            torinfo.tmdbDetails = details
-            
-            # Fill in additional details
-            if hasattr(details, 'origin_country') and details.origin_country:
-                torinfo.origin_country = details.origin_country[0]
-            torinfo.original_title = getattr(details, 'original_title', '')
-            torinfo.overview = getattr(details, 'overview', '')
-            torinfo.vote_average = getattr(details, 'vote_average', 0)
-            if hasattr(details, 'production_countries') and details.production_countries:
-                torinfo.production_countries = details.production_countries[0].get('iso_3166_1', '')
+                try:
+                    if torinfo.tmdb_cat == 'movie':
+                        details = Movie().details(torinfo.tmdb_id)
+                    elif torinfo.tmdb_cat == 'tv':
+                        details = TV().details(torinfo.tmdb_id)
+                    else:
+                        return torinfo  # Cannot fetch details without a category
+                except Exception as e:
+                    logger.error(f"Failed to fetch TMDb details for {torinfo.tmdb_cat}-{torinfo.tmdb_id}: {e}")
+                    return torinfo
 
-        except Exception as e:
-            logger.error(f"Failed to fetch TMDb details for {torinfo.tmdb_cat}-{torinfo.tmdb_id}: {e}")
+        if not details:
+            return torinfo
 
-        return torinfo
+        torinfo.tmdbDetails = details
+
+        # Fill in additional details
+        if hasattr(details, 'origin_country') and details.origin_country:
+            torinfo.origin_country = details.origin_country[0]
+        torinfo.original_title = getattr(details, 'original_title', '')
+        torinfo.overview = getattr(details, 'overview', '')
+        torinfo.vote_average = getattr(details, 'vote_average', 0)
+        if hasattr(details, 'production_countries') and details.production_countries:
+            torinfo.production_countries = details.production_countries[0].get('iso_3166_1', '')
