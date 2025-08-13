@@ -13,10 +13,15 @@ class Media(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     torname_regex = Column(String, unique=True, index=True, nullable=False)
-    tmdb_id = Column(Integer, index=True, nullable=False)
-    tmdb_title = Column(String, nullable=False)
-    tmdb_cat = Column(String, nullable=False)
+    tmdb_id = Column(Integer, index=True, nullable=True)
+    tmdb_title = Column(String, nullable=True)
+    tmdb_cat = Column(String, nullable=True)
     tmdb_poster = Column(String)  # URL to the poster image
+    tmdb_year = Column(Integer, nullable=True)
+    tmdb_genres = Column(String, nullable=True)
+    tmdb_preview = Column(String, nullable=True)
+    custom_title = Column(String, nullable=True)
+    custom_path = Column(String, nullable=True)
 
     torrents = relationship("Torrent", back_populates="media", cascade="all, delete-orphan")
 

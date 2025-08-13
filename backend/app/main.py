@@ -32,24 +32,33 @@ def get_db():
 
 @app.get("/api/search", response_model=schemas.Media)
 def search_media_by_torname(torname: str, db: Session = Depends(get_db)):
-    media = crud.find_media_by_torname(db, torname)
-    if media:
-        return media
+    # 1. Check if torrent with the same name already exists
+    torrent = crud.find_torrent_by_name(db, torname)
+    if torrent:
+        return torrent.media
 
-    # 1. Parse torrent name
+    # 2. Parse torrent name
     torinfo = TorrentParser.parse(torname)
     if not torinfo:
         raise HTTPException(status_code=400, detail="Failed to parse torrent name.")
 
-    # 2. Search TMDb using the parsed info
+    # 3. Check if media with a matching regex exists
+    media = crud.find_media_by_title(db, torinfo.media_title)
+    if media:
+        # If media is found, create a new torrent and associate it
+        torrent_create = schemas.TorrentCreate(name=torname)
+        crud.create_torrent(db, torrent_create, media.id)
+        return media
+
+    # 4. If no media found, search TMDb
     found = searcher.searchTMDb(torinfo)
     if not found:
         raise HTTPException(status_code=404, detail=f"Could not find TMDb match for \"{torname}\"")
 
-    # 3. If search is successful, save to DB
+    # 5. If search is successful, save to DB
     try:
         media_create = schemas.MediaCreate(
-            torname_regex=torinfo.media_title,  # Using the original name as regex for simplicity
+            torname_regex=torinfo.media_title,  # Using the parsed title as regex
             tmdb_id=torinfo.tmdb_id,
             tmdb_title=torinfo.tmdb_title,
             tmdb_cat=torinfo.tmdb_cat,
@@ -71,6 +80,35 @@ def search_media_by_torname(torname: str, db: Session = Depends(get_db)):
 def create_media(media: schemas.MediaCreate, db: Session = Depends(get_db)):
     return crud.create_media(db=db, media=media)
 
+@app.post("/api/media/from-tmdb/", response_model=schemas.Media)
+def create_media_from_tmdb(
+    torname_regex: str,
+    tmdb_cat: str,
+    tmdb_id: int,
+    db: Session = Depends(get_db)
+):
+    try:
+        # Fetch details from TMDb
+        tmdb_details = searcher.get_details_by_id(tmdb_id, tmdb_cat)
+
+        if not tmdb_details:
+            raise HTTPException(status_code=404, detail=f"Could not find TMDb details for ID {tmdb_id} and category {tmdb_cat}")
+
+        media_create = schemas.MediaCreate(
+            torname_regex=torname_regex,
+            tmdb_id=tmdb_id,
+            tmdb_title=tmdb_details.get("title") or tmdb_details.get("name"),
+            tmdb_cat=tmdb_cat,
+            tmdb_poster=tmdb_details.get("poster_path"),
+            tmdb_year=int(tmdb_details.get("release_date", "0")[:4]) if tmdb_details.get("release_date") else None,
+            tmdb_genres=", ".join([genre["name"] for genre in tmdb_details.get("genres", [])]),
+            tmdb_preview=tmdb_details.get("overview")
+        )
+        new_media = crud.create_media(db, media_create)
+        return new_media
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to create media from TMDb: {e}")
+
 @app.get("/api/media/", response_model=schemas.MediaPage)
 def read_all_media(skip: int = 0, limit: int = 10, db: Session = Depends(get_db)):
     return crud.get_all_media(db, skip=skip, limit=limit)
@@ -83,7 +121,7 @@ def read_media(media_id: int, db: Session = Depends(get_db)):
     return db_media
 
 @app.put("/api/media/{media_id}", response_model=schemas.Media)
-def update_media(media_id: int, media: schemas.MediaCreate, db: Session = Depends(get_db)):
+def update_media(media_id: int, media: schemas.MediaUpdate, db: Session = Depends(get_db)):
     db_media = crud.update_media(db, media_id, media)
     if db_media is None:
         raise HTTPException(status_code=404, detail="Media not found")

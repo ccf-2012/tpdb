@@ -27,12 +27,25 @@ def get_all_media(db: Session, skip: int = 0, limit: int = 100):
     
     return {"items": media_items, "total": total_groups}
 
+def find_torrent_by_name(db: Session, name: str) -> models.Torrent | None:
+    return db.query(models.Torrent).filter(models.Torrent.name == name).first()
 
-def find_media_by_torname(db: Session, torname: str) -> models.Media | None:
+def find_media_by_torname_regex(db: Session, torname: str) -> models.Media | None:
     all_media = db.query(models.Media).all()
     for media in all_media:
         try:
             if re.search(media.torname_regex, torname, re.IGNORECASE):
+                return media
+        except re.error:
+            # Ignore invalid regex patterns in the database
+            continue
+    return None
+
+def find_media_by_title(db: Session, title: str) -> models.Media | None:
+    all_media = db.query(models.Media).all()
+    for media in all_media:
+        try:
+            if re.search(media.torname_regex, title, re.IGNORECASE):
                 return media
         except re.error:
             # Ignore invalid regex patterns in the database
@@ -57,7 +70,7 @@ def create_torrent(db: Session, torrent: schemas.TorrentCreate, media_id: int) -
 
 # --- Update Operations ---
 
-def update_media(db: Session, media_id: int, media_update: schemas.MediaCreate) -> models.Media | None:
+def update_media(db: Session, media_id: int, media_update: schemas.MediaUpdate) -> models.Media | None:
     db_media = get_media(db, media_id)
     if db_media:
         for key, value in media_update.model_dump(exclude_unset=True).items():

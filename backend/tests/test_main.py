@@ -52,7 +52,7 @@ def cleanup_database():
 def test_read_all_media_empty():
     response = client.get("/api/media/")
     assert response.status_code == 200
-    assert response.json() == []
+    assert response.json()["items"] == []
 
 def test_search_media_not_found():
     # This test assumes the torrent name won't be found and external search fails
@@ -88,8 +88,8 @@ def test_create_and_read_media():
     # 3. Read all media items
     response = client.get("/api/media/")
     assert response.status_code == 200
-    assert len(response.json()) == 1
-    assert response.json()[0]["tmdb_title"] == "Test Movie"
+    assert len(response.json()["items"]) == 1
+    assert response.json()["items"][0]["tmdb_title"] == "Test Movie"
 
 def test_create_torrent_for_media():
     # 1. First, create a media item to associate the torrent with
@@ -116,4 +116,37 @@ def test_create_torrent_for_media():
     response = client.get(f"/api/media/{media_id}")
     assert len(response.json()["torrents"]) == 1
     assert response.json()["torrents"][0]["name"] == torrent_data["name"]
+
+def test_search_existing_torrent():
+    # 1. Create a media item
+    media_data = {
+        "torname_regex": "search.test.2025",
+        "tmdb_id": 98765,
+        "tmdb_title": "Search Test Movie",
+        "tmdb_cat": "movie",
+        "tmdb_poster": "/search_poster.jpg"
+    }
+    media_response = client.post("/api/media/", json=media_data)
+    assert media_response.status_code == 200
+    media_id = media_response.json()["id"]
+
+    # 2. Create a torrent for that media
+    torrent_name = "Search.Test.2025.1080p.mkv"
+    torrent_data = {"name": torrent_name}
+    client.post(f"/api/torrents/?media_id={media_id}", json=torrent_data)
+
+    # 3. Search for the existing torrent
+    response = client.get(f"/api/search?torname={torrent_name}")
+    assert response.status_code == 200
+    assert response.json()["tmdb_title"] == "Search Test Movie"
+
+    # 4. Search for a new torrent that matches the regex
+    new_torrent_name = "Search.Test.2025.720p.mp4"
+    response = client.get(f"/api/search?torname={new_torrent_name}")
+    assert response.status_code == 200
+    assert response.json()["tmdb_title"] == "Search Test Movie"
+
+    # 5. Verify that a new torrent was created
+    response = client.get(f"/api/media/{media_id}")
+    assert len(response.json()["torrents"]) == 2
 
