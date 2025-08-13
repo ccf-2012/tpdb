@@ -21,6 +21,11 @@ class Media(Base):
     tmdb_year = Column(Integer, nullable=True)
     tmdb_genres = Column(String, nullable=True)
     tmdb_overview = Column(String, nullable=True)
+    original_language = Column(String, nullable=True)
+    release_air_date = Column(String, nullable=True)
+    origin_country = Column(String, nullable=True)
+    original_title = Column(String, nullable=True)
+    production_countries = Column(String, nullable=True)
     custom_title = Column(String, nullable=True)
     custom_path = Column(String, nullable=True)
 
@@ -32,6 +37,7 @@ class Torrent(Base):
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String, nullable=False, unique=True)
     infolink = Column(String, nullable=True)
+    subtitle = Column(String(200), nullable=True)
     media_id = Column(Integer, ForeignKey("media.id"), nullable=False)
 
     media = relationship("Media", back_populates="torrents")

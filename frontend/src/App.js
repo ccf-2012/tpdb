@@ -55,7 +55,7 @@ function Table({ columns, data, onEdit, onDelete }) {
 
   return (
     <div className="table-responsive">
-      <table {...getTableProps()} className="table table-sm table-hover">
+      <table {...getTableProps()} className="table table-sm table-hover" style={{  width: '100%' }}>
         <thead className="thead-dark">
           {headerGroups.map(headerGroup => (
             <tr {...headerGroup.getHeaderGroupProps()}>
@@ -235,7 +235,7 @@ function App() {
     () => {
       const baseColumns = [
         {
-          Header: 'Poster',
+          Header: '海报',
           accessor: 'tmdb_poster',
           Cell: ({ value, row }) => (
             <div onClick={(e) => e.stopPropagation()}>
@@ -251,31 +251,38 @@ function App() {
               }
             </div>
           ),
-          width: 50,
           disableSortBy: true, // Disable sorting on poster
+          width: 60,
+          maxWidth: 70,
+          minWidth: 50,
         },
         {
-          Header: 'Details',
+          Header: '媒体详情',
           accessor: 'tmdb_title',
           // Add a second accessor for sorting by year
           sortAccessor: 'tmdb_year',
           Cell: ({ row }) => (
             <div>
               <h6 className="mb-1">{row.original.tmdb_title} <span className="text-muted font-weight-normal">({row.original.tmdb_year})</span></h6>
-              <div className="small text-muted mb-1"><strong>Category:</strong> {row.original.tmdb_cat}</div>
-              {row.original.tmdb_genres && <div className="small text-muted mb-2"><strong>Genres:</strong> {row.original.tmdb_genres}</div>}
+              <div className="small mb-1">
+                <span className={`badge ${row.original.tmdb_cat === 'movie' ? 'tag-movie' : 'tag-tv'} me-1`}>
+                  {row.original.tmdb_cat}
+                </span>
+                {row.original.tmdb_genres && <span className="text-muted">{row.original.tmdb_genres}</span>}
+              </div>
               <p className="small" style={{ whiteSpace: 'pre-wrap', maxHeight: '70px', overflowY: 'auto' }}>
                 {row.original.tmdb_overview}
               </p>
             </div>
           ),
+          // No width or minWidth for Details to allow it to expand
         },
       ];
 
       if (!isMobile) {
         baseColumns.push(
           {
-            Header: 'Rules',
+            Header: '正则规则',
             accessor: 'torname_regex_list',
             // Custom sort for number of rules
             sortType: (rowA, rowB) => {
@@ -288,30 +295,31 @@ function App() {
                 ))}
               </ul>
             ),
-            width: 80,
+            width: 50,
           },
           {
-            Header: 'Torrents',
+            Header: '种子',
             accessor: 'torrents',
             Cell: ({ value }) => value.length,
             sortType: 'basic',
-            width: 30,
+            width: 10,
+
           }
         );
       }
 
       baseColumns.push(
         {
-          Header: 'Actions',
+          Header: '操作',
           id: 'actions',
           disableSortBy: true, // Disable sorting on actions
           Cell: ({ row }) => (
             <div className="text-center" onClick={(e) => e.stopPropagation()}>
-                <Button variant="outline-warning" size="sm" className="mb-1 w-100" onClick={() => handleOpenModal(row.original.originalItems[0])}>Edit</Button>
-                <Button variant="outline-danger" size="sm" className="w-100" onClick={() => handleDeleteMedia(row.original.originalItems[0].id)}>Delete</Button>
+                <Button variant="outline-warning" size="sm" className="me-1" onClick={() => handleOpenModal(row.original.originalItems[0])} title="Edit"><span role="img" aria-label="edit">&#9998;</span></Button>
+                <Button variant="outline-danger" size="sm" onClick={() => handleDeleteMedia(row.original.originalItems[0].id)} title="Delete"><span role="img" aria-label="delete">&#128465;</span></Button>
             </div>
           ),
-          width: 40,
+          width: 20,
         }
       );
 
@@ -353,12 +361,30 @@ function App() {
       ) : (
         <>
           <Table columns={columns} data={filteredData} onEdit={handleOpenModal} onDelete={handleDeleteMedia} />
-          {totalPages > 1 && (
-            <Row className="justify-content-center">
+          {totalPages > 0 && (
+            <Row className="justify-content-center align-items-center mt-3">
+              <Col xs="auto" className="text-muted small me-3">
+                Page {currentPage} of {totalPages} (Total: {totalGroups} items)
+              </Col>
               <Col xs="auto">
                 <Pagination size={isMobile ? 'sm' : undefined}>
                   <Pagination.First onClick={() => handlePageChange(1)} disabled={currentPage === 1} />
                   <Pagination.Prev onClick={() => handlePageChange(currentPage - 1)} disabled={currentPage === 1} />
+
+                  {/* Render page numbers */}
+                  {Array.from({ length: totalPages }, (_, i) => i + 1).map(page => {
+                    if (page === 1 || page === totalPages || (page >= currentPage - 2 && page <= currentPage + 2)) {
+                      return (
+                        <Pagination.Item key={page} active={page === currentPage} onClick={() => handlePageChange(page)}>
+                          {page}
+                        </Pagination.Item>
+                      );
+                    } else if (page === currentPage - 3 || page === currentPage + 3) {
+                      return <Pagination.Ellipsis key={page} />;
+                    }
+                    return null;
+                  })}
+
                   <Pagination.Next onClick={() => handlePageChange(currentPage + 1)} disabled={currentPage === totalPages} />
                   <Pagination.Last onClick={() => handlePageChange(totalPages)} disabled={currentPage === totalPages} />
                 </Pagination>

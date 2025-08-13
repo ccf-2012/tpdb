@@ -12,6 +12,7 @@ from torcp2.torinfo import TorrentParser, TorrentInfo
 from app import crud, models, schemas
 from app.models import SessionLocal, create_db_and_tables
 from app.config import settings
+from app.utils import format_genres
 
 app = FastAPI()
 
@@ -90,13 +91,7 @@ def create_media_from_tmdb(
         tmdb_poster = n1.poster_path
         tmdb_year = int(n1.release_air_date[:4]) if n1.release_air_date else None
 
-        genres_list = []
-        if n1.tmdbDetails and "genres" in n1.tmdbDetails:
-            genres_list = n1.tmdbDetails["genres"]
-        elif n1.genre_ids:
-            genres_list = [{"name": g} for g in n1.genre_ids]
-
-        tmdb_genres = ", ".join([genre["name"] for genre in genres_list])
+        tmdb_genres = format_genres(n1)
         tmdb_overview = n1.overview
 
         media_create = schemas.MediaCreate(

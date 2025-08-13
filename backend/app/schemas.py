@@ -38,6 +38,11 @@ class MediaBase(BaseModel):
     imdb_id: Optional[str] = None
     tmdb_genres: Optional[str] = None
     tmdb_overview: Optional[str] = None
+    original_language: Optional[str] = None
+    release_air_date: Optional[str] = None
+    origin_country: Optional[str] = None
+    original_title: Optional[str] = None
+    production_countries: Optional[str] = None
     custom_title: Optional[str] = None
     custom_path: Optional[str] = None
 
@@ -54,6 +59,11 @@ class MediaUpdate(MediaBase):
     imdb_id: Optional[str] = None
     tmdb_genres: Optional[str] = None
     tmdb_overview: Optional[str] = None
+    original_language: Optional[str] = None
+    release_air_date: Optional[str] = None
+    origin_country: Optional[str] = None
+    original_title: Optional[str] = None
+    production_countries: Optional[str] = None
     custom_title: Optional[str] = None
     custom_path: Optional[str] = None
 

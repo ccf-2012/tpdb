@@ -4,6 +4,7 @@ from . import models, schemas
 from torcp2.torinfo import TorrentInfo
 from torcp2.tmdbsearcher import TMDbSearcher
 from loguru import logger
+from app.utils import format_genres
 
 # --- Read Operations ---
 
@@ -54,6 +55,8 @@ def find_media_by_imdb_id(db: Session, imdb_id: str) -> models.Media | None:
 # --- Create Operations ---
 
 def create_media(db: Session, torinfo: TorrentInfo) -> models.Media:
+    tmdb_genres = format_genres(torinfo)
+
     media_create = schemas.MediaCreate(
         torname_regex=torinfo.media_title,
         tmdb_id=torinfo.tmdb_id,
@@ -62,7 +65,13 @@ def create_media(db: Session, torinfo: TorrentInfo) -> models.Media:
         tmdb_poster=torinfo.poster_path,
         tmdb_year=torinfo.year,
         imdb_id=torinfo.imdb_id,
-        tmdb_overview=torinfo.overview
+        tmdb_overview=torinfo.overview,
+        original_language=torinfo.original_language,
+        release_air_date=torinfo.release_air_date,
+        origin_country=torinfo.origin_country,
+        original_title=torinfo.original_title,
+        production_countries=torinfo.production_countries,
+        tmdb_genres=tmdb_genres
     )
     db_media = models.Media(**media_create.model_dump())
     db.add(db_media)
